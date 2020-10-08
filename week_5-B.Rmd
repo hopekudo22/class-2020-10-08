@@ -7,7 +7,11 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(mvtnorm) # you may need to install.packages() this!
+library(readr)
+library(ggplot2)
+```
 
+```{r setup, include=FALSE}
 # Credit for almost all of this goes to Juan and Tyler.
 
 # Read in the raw data first. You cannot hard code the 51 electoral votes! I
@@ -15,6 +19,8 @@ library(mvtnorm) # you may need to install.packages() this!
 # Wikipedia. Also, I changed the name of the variable to electoral_votes. evs is
 # not a good name! We should try not to use abbreviations when naming variables
 # or functions.
+
+electoral_votes <- read_csv("election_data/electoral_votes.csv")
 
 # I estimated the standard deviation for the vote shares from the data provided
 # by 538 instead of hard-coding 6.
@@ -117,13 +123,37 @@ Finally, use `geom_density` to plot the distributions of two states of your choi
 
 **You should do this in steps. First, create the `draws` object. Second, try to successfully change the format of the dataset. Don't do everything all at once in one long section with many pipes!!**
 
+```{r setup, include=FALSE}
+#simulate 100 times
+draws <- simulate_election(100) 
 
-  
+draws %>%
+  pivot_longer(cols = 1:51, names_to = "state", values_to = "trump_share") %>%
+  filter(state == "Arizona" | state == "Georgia") %>%
+ 
+  ggplot(mapping = aes(x = trump_share, fill = state)) + 
+  geom_density() +
+  facet_wrap(~state)
+
+draws
+#higher degree of certainty in Georgia
+```
+
 ## Scene 2: Estimating Results from a Single State
 
 In Scene 1, we called this election simulation function a single time. Now, create a new `tibble` called `elections` with one column, `simulations`, that simulates one election in each of 1000 rows. Finally, use this `elections` object to create a column called `pa_win` that uses a `map` function to figure out whether Trump wins Pennsylvania in each of these simulated elections. Once you've verified that works, take the average of the `pa_win` column to see how likely Trump is to win Pennsylvania across all of these simulations.
 
+```{r setup, include=FALSE}
 
+#map 100 repitions of a simulation
+elections <- tibble(simulations = map(rep(1,1000), simulate_election))
+
+elections %>%
+  #tilda, dot refers back to simulations data, $ filters for PA
+  mutate(pa_win = map_lgl(simulations, ~.$Pennsylvania > 50)) %>%
+  summarise(pa_avg = mean(pa_win))
+
+```
 
 ## Scene 3: Do it again!
 
@@ -131,7 +161,16 @@ First, repeat Scene 2 to make a column called `oh_win` that uses a `map` functio
 
 Once that is all done, summarise your dataset to estimate the probabilities of (1) winning PA, (2) winning OH, and (3) winning both.
 
+```{r setup, include=FALSE}
 
+elections %>%
+  mutate(pa_win = map_lgl(simulations, ~.$Pennsylvania > 50)) %>%
+  mutate(oh_win = map_lgl(simulations, ~.$Ohio > 50)) %>%
+  mutate(both = case_when(
+    pa_win == TRUE & oh_win == TRUE ~ TRUE, TRUE ~ FALSE)) %>%
+  summarise(pa_avg = mean(pa_win), oh_avg = mean(oh_win), both_avg = mean(both))
+
+```
 
 ## Scene 4
 
@@ -139,7 +178,17 @@ In Scene 4, we estimated the probabilities of winning two states. However, notic
 
 The Economist says that results in PA and OH are likely to be highly correlated - around 0.7. Let's investigate this using conditional probabilities. Using your elections object from Scene 2, again create two columns called `oh_win` and `pa_win` that map to TRUE and FALSE if Trump wins each state. Then, calculate the probability of winning PA in two scenarios - when Trump wins OH, and when he doesn't. That is, (1) what percentage of the time does Trump win PA if he loses OH, and (2) what percentage of the time does Trump win PA if he wins OH?
 
+```{r setup, include=FALSE}
 
+elections %>%
+  mutate(pa_win = map_lgl(simulations, ~.$Pennsylvania > 50)) %>%
+  mutate(oh_win = map_lgl(simulations, ~.$Ohio > 50)) %>%
+  group_by(oh_win) %>%
+  summarise(pa_avg = mean(pa_win))
+
+#Loses Ohio = .07, Wins Ohio = .312369
+#
+```
 
 ## Scene 5
 
@@ -147,7 +196,23 @@ Our simulation only includes the predicted popular vote results. Let's simulate 
 
 1. First, create a new dataset called `elections_100` that uses `map` to call `simulate_election` with n=1 100 times in a column called `simulations`. Print out `elections_100`. You'll see a list-column where each row is a 1 x 51 dataset.
 
+```{r}
+
+elections_100 <- tibble(simulations = map(rep(1,100), simulate_election))
+elections_100
+
+```
+
 2. Just like any other dataset, we can use functions like pivot and join on these list-column entries. They're just `tibbles`! The only thing that has changed is that now a separate tibble contains other tibbles inside of a list-column. Second, use `map` to pivot each of those simulations into a longer format. Save these pivoted datasets into a new list-column called `df_pivoted`. Don't forget you will need the `~` and `.` syntax.
+
+```{r}
+
+elections_100 %>%
+  mutate(df_pivoted = map(simulations, pivot_longer(.,cols = 1, 
+                                                    names_to = "state",
+                                                    values_to = "trump_share")))
+
+```
 
 3. `cor.states` has a column called `evs` which gives the electoral votes for each state. We'd like to use this! Third, use `map` to join each dataset in `df_pivoted` with the `cor.states` dataset by the `state` column. Store this in a new column called `df_joined`. 
 
